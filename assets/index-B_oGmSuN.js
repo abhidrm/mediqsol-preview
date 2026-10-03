@@ -2540,51 +2540,37 @@ uniform float uGrain;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
-float noise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
-             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
-}
-
-mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
-
-// Four colours on one ramp: uA at 0, uB at 0.4, uC at 0.75, uD at 1.
-vec3 ramp(float v) {
-  vec3 c = mix(uA, uB, smoothstep(0.0, 0.4, v));
-  c = mix(c, uC, smoothstep(0.4, 0.75, v));
-  return mix(c, uD, smoothstep(0.75, 1.0, v));
+// One soft colour blob: its weight falls off with the distance from its
+// centre, which orbits slowly around the card.
+float blob(vec2 p, vec2 centre, float tightness) {
+  vec2 d = p - centre;
+  return exp(-dot(d, d) * tightness) + 0.0001;
 }
 
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   float ratio = uRes.x / uRes.y;
-  vec2 p = uv - 0.5;
+  vec2 p = vec2(uv.x * ratio, uv.y); // height is 1, so blobs stay round
   float t = uTime;
 
-  // A slowly wandering noise value turns the whole field, so the colours
-  // swing around to different places over time instead of sweeping one way.
-  float turn = noise(vec2(t * 0.06, p.x * p.y * 2.0 + 3.0));
-  p.y /= ratio;
-  p = rot((turn - 0.5) * 6.0 + 3.14159) * p;
-  p.y *= ratio;
+  // Four blobs, one per colour, drifting on their own slow loops.
+  vec2 mid = vec2(ratio * 0.5, 0.5);
+  vec2 ca = mid + vec2(ratio * 0.34 * sin(t * 0.21 + 0.0), 0.34 * cos(t * 0.17 + 1.0));
+  vec2 cb = mid + vec2(ratio * 0.36 * sin(t * 0.15 + 2.1), 0.36 * cos(t * 0.23 + 3.0));
+  vec2 cc = mid + vec2(ratio * 0.38 * sin(t * 0.19 + 4.2), 0.32 * cos(t * 0.13 + 5.0));
+  vec2 cd = mid + vec2(ratio * 0.40 * sin(t * 0.12 + 5.3), 0.40 * cos(t * 0.20 + 0.5));
 
-  // Soft wave warp on top.
-  p.x += sin(p.y * 4.0 + t * 0.35) * 0.05;
-  p.y += sin(p.x * 6.0 + t * 0.35) * 0.04;
-
-  // Two overlapping sweeps pick where each colour lands.
-  float sx = smoothstep(-0.45, 0.45, p.x);
-  float sy = smoothstep(0.45, -0.35, p.y);
-  float v = mix(sx * 0.8, 0.25 + sx * 0.75, sy);
-
-  // Over the middle of the card the ramp tops out at the third colour;
-  // towards the edges it can reach the lightest one.
+  // Over the middle of the card the lightest colour is held back, so the
+  // white text there stays readable; towards the edges it comes through.
   vec2 q = (uv - 0.5) * vec2(1.0, 1.7);
-  float nearText = 1.0 - smoothstep(0.22, 0.5, length(q));
-  v = clamp(v, 0.0, 1.0) * mix(1.0, 0.7, nearText);
+  float edge = smoothstep(0.18, 0.5, length(q));
 
-  vec3 col = ramp(v);
+  float wa = blob(p, ca, 7.0);
+  float wb = blob(p, cb, 7.0);
+  float wc = blob(p, cc, 7.0) * mix(0.6, 1.0, edge);
+  float wd = blob(p, cd, 7.0) * mix(0.15, 1.0, edge);
+
+  vec3 col = (uA * wa + uB * wb + uC * wc + uD * wd) / (wa + wb + wc + wd);
 
   // Static film grain.
   col += (hash(gl_FragCoord.xy) - 0.5) * uGrain;
