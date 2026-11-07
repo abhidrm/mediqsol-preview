@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Referral service (demo)</title>
+<!--
+  Stand-in for the external referral system that IDentQ loads in an iframe.
+  The real service takes the same query parameters and, when the clinician
+  submits, posts { source: "referral-service", type: "submitted", referralId }
+  to the parent window. Swap REFERRAL_SERVICE_URL in referrals-page.tsx for
+  the partner's URL; nothing else in IDentQ needs to change.
+-->
+<style>
+  :root { --ink:#1d2433; --sub:#5b6476; --line:#d9dee7; --bg:#f4f6f9; --accent:#0b6e4f; --accent-ink:#fff; --warn:#a14a00; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.5 -apple-system, "Segoe UI", Arial, sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 28px; display:flex; align-items:center; gap:10px; }
+  header b { font-size:15px; }
+  header .tag { margin-left:auto; font-size:12px; color:var(--sub); border:1px solid var(--line); border-radius:4px; padding:2px 8px; }
+  main { max-width:860px; margin:24px auto; padding:0 24px 48px; }
+  h1 { font-size:22px; font-weight:600; margin:0 0 4px; }
+  .lead { color:var(--sub); margin:0 0 20px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:6px; padding:18px 20px; margin-bottom:16px; }
+  section h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--sub); margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px 20px; }
+  .k { font-size:12px; color:var(--sub); } .v { font-weight:600; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 6px; }
+  textarea, select, input[type=text] { width:100%; border:1px solid var(--line); border-radius:4px; padding:9px 10px; font:inherit; color:inherit; background:#fff; }
+  textarea { min-height:110px; resize:vertical; }
+  .att { display:flex; align-items:center; gap:8px; padding:6px 0; }
+  .pill { font-size:12px; background:#e8f3ee; color:var(--accent); border-radius:999px; padding:2px 10px; }
+  .row { display:flex; gap:10px; justify-content:flex-end; margin-top:8px; }
+  button { font:inherit; font-weight:600; border-radius:4px; padding:9px 18px; cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .err { color:#b00020; font-size:12px; margin-top:4px; display:none; }
+  .done { text-align:center; padding:48px 20px; }
+  .done .id { font: 600 20px/1.2 ui-monospace, Menlo, monospace; margin:10px 0; }
+  .urgent { color:var(--warn); font-weight:600; }
+</style>
+</head>
+<body>
+<header><b>Referral service</b><span style="color:var(--sub)">· demo stand-in for the practice's referral partner</span><span class="tag" id="ref"></span></header>
+<main id="app"></main>
+<script>
+  const q = new URLSearchParams(location.search);
+  const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const form = q.get("form") || "Referral";
+  const draft = q.get("draft") || "";
+  const include = (q.get("include") || "").split(",").filter(Boolean);
+  const submittedId = q.get("submitted");
+  const urgent = /cancer|urgent/i.test(form);
+  document.getElementById("ref").textContent = submittedId ? "Ref " + submittedId : "Draft " + draft;
+  const app = document.getElementById("app");
+
+  function post(msg) { try { parent.postMessage(Object.assign({ source: "referral-service", draft }, msg), "*"); } catch (e) {} }
+
+  if (submittedId) {
+    app.innerHTML = `<section class="done"><h1>${esc(form)}</h1><p class="lead">This referral has been submitted and is with the receiving service.</p>
+      <div class="id">${esc(submittedId)}</div><p class="k">Submitted ${esc(q.get("on") || "")}</p></section>`;
+  } else {
+    app.innerHTML = `
+      <h1>${esc(form)}</h1>
+      <p class="lead">${urgent ? '<span class="urgent">Urgent pathway.</span> ' : ""}Details below came from the patient record. Check them, add the clinical reason, then submit.</p>
+      <section><h2>Patient</h2><div class="grid">
+        <div><div class="k">Name</div><div class="v">${esc(q.get("patient"))}</div></div>
+        <div><div class="k">Date of birth</div><div class="v">${esc(q.get("dob") || "-")}</div></div>
+        <div><div class="k">NHS number</div><div class="v">${esc(q.get("nhs") || "-")}</div></div>
+      </div></section>
+      <section><h2>Referrer</h2><div class="grid">
+        <div><div class="k">Clinician</div><div class="v">${esc(q.get("clinician"))}</div></div>
+        <div><div class="k">Practice</div><div class="v">${esc(q.get("practice"))}</div></div>
+      </div></section>
+      <section><h2>Clinical details</h2>
+        <label for="reason">Reason for referral</label>
+        <textarea id="reason" placeholder="Presenting complaint, findings and what you are asking the service to do"></textarea>
+        <div class="err" id="reasonErr">Add the reason for referral before submitting.</div>
+        <label for="prio">Priority</label>
+        <select id="prio"><option>${urgent ? "Urgent (2-week wait)" : "Routine"}</option><option>${urgent ? "Routine" : "Urgent"}</option></select>
+      </section>
+      <section><h2>Attachments from the record</h2>
+        ${include.length ? include.map((a) => `<div class="att"><span class="pill">Attached</span>${esc(a)}</div>`).join("") : '<div class="k">Nothing attached.</div>'}
+      </section>
+      <div class="row"><button id="save">Save draft</button><button class="primary" id="submit">Submit referral</button></div>`;
+    document.getElementById("save").onclick = () => post({ type: "saved" });
+    document.getElementById("submit").onclick = () => {
+      const reason = document.getElementById("reason").value.trim();
+      document.getElementById("reasonErr").style.display = reason ? "none" : "block";
+      if (!reason) return;
+      const priority = document.getElementById("prio").value;
+      const id = "RF-" + String(Date.now()).slice(-7);
+      const on = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+      app.innerHTML = `<section class="done"><h1>Referral submitted</h1><p class="lead">The receiving service will review it. Track its status from the patient record.</p>
+        <div class="id">${id}</div><p class="k">${esc(form)} · ${on}</p></section>`;
+      document.getElementById("ref").textContent = "Ref " + id;
+      post({ type: "submitted", referralId: id, priority });
+    };
+  }
+  post({ type: "ready" });
+</script>
+</body>
+</html>
